@@ -1,6 +1,10 @@
 # lsp-editor
 
-An Electron application with React and TypeScript
+A simple python code editor with code formatting and linting.
+
+This is a toy experiment to show how to integrate the ruff language server into a code editor.
+
+This editor is built with Electron, CodeMirror, and VS Code's language server client library.
 
 ## Recommended IDE Setup
 
@@ -14,21 +18,15 @@ An Electron application with React and TypeScript
 $ npm install
 ```
 
+You will also need to have `ruff` installed and available in your path.
+
 ### Development
 
 ```bash
 $ npm run dev
 ```
 
-### Build
+### TODO:
 
-```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
-```
+- [x] Code formatting
+- [ ] Code linting
