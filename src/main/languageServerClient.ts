@@ -1,5 +1,5 @@
 import { ChildProcess, spawn } from 'child_process'
-import { ChangeSet, Text, EditorState } from '@codemirror/state'
+import { ChangeSet, Text } from '@codemirror/state'
 import { EventEmitter } from 'events'
 
 import {
@@ -181,16 +181,13 @@ async function format(
     return
   }
 
-  // Create an EditorState from the document's code
-  const state = EditorState.create({ doc: document.code })
-
   const changes = ChangeSet.of(
     formattingResult.map((edit) => ({
-      from: positionToOffset(edit.range.start, state),
-      to: positionToOffset(edit.range.end, state),
+      from: positionToOffset(edit.range.start, document.code),
+      to: positionToOffset(edit.range.end, document.code),
       insert: edit.newText
     })),
-    state.doc.length
+    document.code.length
   )
 
   // Don't apply state change to backend `documents` yet
@@ -198,10 +195,7 @@ async function format(
   return changes.toJSON()
 }
 
-function positionToOffset(
-  position: { line: number; character: number },
-  state: EditorState
-): number {
-  const line = state.doc.line(position.line + 1) // CodeMirror lines are 1-indexed
+function positionToOffset(position: { line: number; character: number }, doc: Text): number {
+  const line = doc.line(position.line + 1) // Text lines are 1-indexed
   return line.from + position.character
 }
