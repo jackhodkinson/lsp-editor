@@ -12,7 +12,8 @@ import {
   StreamMessageWriter,
   TextDocumentContentChangeEvent,
   TextDocumentItem,
-  TextEdit
+  TextEdit,
+  Position
 } from 'vscode-languageserver/node'
 
 export type LanguageServer = {
@@ -112,10 +113,10 @@ function edit(
     // Apply CodeMirror ChangeSet
     const newCode = changes.apply(document.code)
 
-    // Convert ChangeSet to TextDocumentContentChangeEvent[]
-    const contentChanges = convertChangeSetToContentChange(changes)
-
     documents.set(documentId, { ...document, version: newVersion, code: newCode })
+
+    // Convert ChangeSet to TextDocumentContentChangeEvent[]
+    const contentChanges = convertChangeSetToContentChange(changes, newCode)
 
     connection.sendNotification('textDocument/didChange', {
       textDocument: { uri: documentId, version: newVersion },
@@ -128,20 +129,31 @@ function edit(
   }
 }
 
-function convertChangeSetToContentChange(changes: ChangeSet): TextDocumentContentChangeEvent[] {
+function convertChangeSetToContentChange(
+  changes: ChangeSet,
+  doc: Text
+): TextDocumentContentChangeEvent[] {
   const contentChanges: TextDocumentContentChangeEvent[] = []
   changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     contentChanges.push({
-      range: { start: positionFromOffset(fromA), end: positionFromOffset(toA) },
+      range: {
+        start: positionFromOffset(fromA, doc),
+        end: positionFromOffset(toA, doc)
+      },
       rangeLength: toA - fromA,
       text: inserted.toString()
     })
   })
+  console.log('The contentChanges are: ', contentChanges)
   return contentChanges
 }
 
-function positionFromOffset(offset: number): { line: number; character: number } {
-  return { line: 0, character: offset }
+function positionFromOffset(offset: number, doc: Text): Position {
+  const line = doc.lineAt(offset)
+  return {
+    line: line.number - 1, // CodeMirror uses 1-based line numbers, convert to 0-based
+    character: offset - line.from
+  }
 }
 
 async function format(

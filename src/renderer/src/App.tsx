@@ -13,9 +13,9 @@ function App(): JSX.Element {
 
   function handleCodeUpdate(update: ViewUpdate): void {
     if (update.docChanged) {
-      const preJsonChanges: ChangeSet = update.changes
-      const changes = preJsonChanges.toJSON()
-      window.api.send('code-delta', changes)
+      const changeSet: ChangeSet = update.changes
+      const serializedChangeSet = changeSet.toJSON()
+      window.api.send('code-delta', serializedChangeSet)
     }
     setCode(update.state.doc.toString())
   }

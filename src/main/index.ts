@@ -15,8 +15,8 @@ app.whenReady().then(async () => {
   const documentId = languageServer.openBlankDocument()
 
   // IPC test
-  ipcMain.on('code-delta', (_, delta) => {
-    const changeSet = ChangeSet.fromJSON(delta)
+  ipcMain.on('code-delta', (_, serializedChangeSet) => {
+    const changeSet = ChangeSet.fromJSON(serializedChangeSet)
     languageServer.edit(documentId, changeSet)
   })
   ipcMain.handle('format-code', async () => {
