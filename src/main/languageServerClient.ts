@@ -33,13 +33,13 @@ export type Document = {
 export async function createLanguageServer(): Promise<LanguageServer> {
   const ruffServer = spawn('ruff', ['server', '--preview', '-v'])
 
-  // // Debugging the ruff server
-  // ruffServer.stdout?.on('data', (data) => {
-  //   console.log(`Ruff server stdout: ${data}`)
-  // })
-  // ruffServer.stderr?.on('data', (data) => {
-  //   console.error(`Ruff server stderr: ${data}`)
-  // })
+  // Debugging the ruff server
+  ruffServer.stdout?.on('data', (data) => {
+    console.log(`Ruff server stdout: ${data}`)
+  })
+  ruffServer.stderr?.on('data', (data) => {
+    console.error(`Ruff server stderr: ${data}`)
+  })
 
   const connection = createServerConnection(ruffServer)
   const documents = new Map<string, Document>()
