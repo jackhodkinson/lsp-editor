@@ -5,8 +5,10 @@ import { createWindow } from './createWindow'
 import { createLanguageServer, LanguageServer } from './languageServerClient'
 import { ChangeSet } from '@uiw/react-codemirror'
 
+let languageServer: LanguageServer
+
 app.whenReady().then(async () => {
-  const languageServer: LanguageServer = await createLanguageServer()
+  languageServer = await createLanguageServer()
   electronApp.setAppUserModelId('com.electron')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -20,7 +22,8 @@ app.whenReady().then(async () => {
     languageServer.edit(documentId, changeSet)
   })
   ipcMain.handle('format-code', async () => {
-    return await languageServer.format(documentId)
+    const changes = await languageServer.format(documentId)
+    return changes?.toJSON()
   })
 
   const mainWindow = createWindow()
@@ -36,5 +39,18 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// Add this new event handler
+app.on('before-quit', async (event) => {
+  event.preventDefault() // Prevent the app from quitting immediately
+  try {
+    await languageServer.shutdown()
+    console.log('Language server shut down successfully')
+  } catch (error) {
+    console.error('Error shutting down language server:', error)
+  } finally {
+    app.exit() // Ensure the app quits even if there's an error
   }
 })

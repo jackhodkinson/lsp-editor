@@ -19,11 +19,12 @@ import {
 export type LanguageServer = {
   openBlankDocument: () => string
   edit: (documentId: string, changes: ChangeSet) => void
-  format: (documentId: string) => Promise<string | undefined>
+  format: (documentId: string) => Promise<ChangeSet | undefined>
   onDiagnostics: (callback: (diagnostics: PublishDiagnosticsParams) => void) => void
+  shutdown: () => Promise<void>
 }
 
-type Document = {
+export type Document = {
   id: string
   version: number
   code: Text
@@ -32,13 +33,13 @@ type Document = {
 export async function createLanguageServer(): Promise<LanguageServer> {
   const ruffServer = spawn('ruff', ['server', '--preview', '-v'])
 
-  // Debugging the ruff server
-  ruffServer.stdout?.on('data', (data) => {
-    console.log(`Ruff server stdout: ${data}`)
-  })
-  ruffServer.stderr?.on('data', (data) => {
-    console.error(`Ruff server stderr: ${data}`)
-  })
+  // // Debugging the ruff server
+  // ruffServer.stdout?.on('data', (data) => {
+  //   console.log(`Ruff server stdout: ${data}`)
+  // })
+  // ruffServer.stderr?.on('data', (data) => {
+  //   console.error(`Ruff server stderr: ${data}`)
+  // })
 
   const connection = createServerConnection(ruffServer)
   const documents = new Map<string, Document>()
@@ -60,11 +61,12 @@ export async function createLanguageServer(): Promise<LanguageServer> {
     format: (documentId) => format(connection, documents, documentId),
     onDiagnostics: (callback: (diagnostics: PublishDiagnosticsParams) => void): void => {
       diagnosticsEmitter.on('diagnostics', callback)
-    }
+    },
+    shutdown: () => shutdown(connection, ruffServer)
   }
 }
 
-function createServerConnection(ruffServer: ChildProcess): Connection {
+export function createServerConnection(ruffServer: ChildProcess): Connection {
   if (ruffServer.stdout && ruffServer.stdin) {
     const connection = createConnection(
       new StreamMessageReader(ruffServer.stdout),
@@ -86,7 +88,10 @@ async function initializeServer(connection: Connection): Promise<void> {
   await connection.sendNotification('initialized')
 }
 
-function openBlankDocument(connection: Connection, documents: Map<string, Document>): string {
+export function openBlankDocument(
+  connection: Connection,
+  documents: Map<string, Document>
+): string {
   const documentId = `file:///document_${Date.now()}.py`
   documents.set(documentId, { id: documentId, version: 0, code: Text.of(['']) })
   connection.sendNotification('textDocument/didOpen', {
@@ -95,42 +100,36 @@ function openBlankDocument(connection: Connection, documents: Map<string, Docume
   return documentId
 }
 
-function edit(
+export function edit(
   connection: Connection,
   documents: Map<string, Document>,
   documentId: string,
   changes: ChangeSet
 ): void {
-  try {
-    if (!documents.has(documentId)) {
-      console.error(`Document ${documentId} not found. Make sure to open it first.`)
-      return
-    }
-
-    const document = documents.get(documentId)!
-    const currentVersion = document.version
-    const newVersion = currentVersion + 1
-
-    // Convert ChangeSet to TextDocumentContentChangeEvent[]
-    const contentChanges = convertChangeSetToContentChange(changes, document.code)
-
-    // Apply CodeMirror ChangeSet
-    const newCode = changes.apply(document.code)
-
-    documents.set(documentId, { ...document, version: newVersion, code: newCode })
-
-    connection.sendNotification('textDocument/didChange', {
-      textDocument: { uri: documentId, version: newVersion },
-      contentChanges
-    })
-
-    console.log(`Edit sent for document ${documentId}, new version: ${newVersion}`)
-  } catch (error) {
-    console.error(`Error in edit function: ${error}`)
+  if (!documents.has(documentId)) {
+    console.error(`Document ${documentId} not found. Make sure to open it first.`)
+    return
   }
+
+  const document = documents.get(documentId)!
+  const currentVersion = document.version
+  const newVersion = currentVersion + 1
+
+  // Convert ChangeSet to TextDocumentContentChangeEvent[]
+  const contentChanges = convertChangeSetToContentChange(changes, document.code)
+
+  // Apply CodeMirror ChangeSet
+  const newCode = changes.apply(document.code)
+
+  documents.set(documentId, { ...document, version: newVersion, code: newCode })
+
+  connection.sendNotification('textDocument/didChange', {
+    textDocument: { uri: documentId, version: newVersion },
+    contentChanges
+  })
 }
 
-function convertChangeSetToContentChange(
+export function convertChangeSetToContentChange(
   changes: ChangeSet,
   doc: Text
 ): TextDocumentContentChangeEvent[] {
@@ -145,11 +144,10 @@ function convertChangeSetToContentChange(
       text: inserted.toString()
     })
   })
-  console.log('The contentChanges are: ', contentChanges)
   return contentChanges
 }
 
-function positionFromOffset(offset: number, doc: Text): Position {
+export function positionFromOffset(offset: number, doc: Text): Position {
   const line = doc.lineAt(offset)
   return {
     line: line.number - 1, // CodeMirror uses 1-based line numbers, convert to 0-based
@@ -157,11 +155,11 @@ function positionFromOffset(offset: number, doc: Text): Position {
   }
 }
 
-async function format(
+export async function format(
   connection: Connection,
   documents: Map<string, Document>,
   documentId: string
-): Promise<string | undefined> {
+): Promise<ChangeSet | undefined> {
   const document = documents.get(documentId)
   if (!document) {
     throw new Error(`Document ${documentId} not found`)
@@ -192,10 +190,31 @@ async function format(
 
   // Don't apply state change to backend `documents` yet
   // because the state in the renderer is the source of truth
-  return changes.toJSON()
+  return changes
 }
 
 function positionToOffset(position: { line: number; character: number }, doc: Text): number {
   const line = doc.line(position.line + 1) // Text lines are 1-indexed
   return line.from + position.character
+}
+
+async function shutdown(connection: Connection, ruffServer: ChildProcess): Promise<void> {
+  try {
+    // Send shutdown request
+    await connection.sendRequest('shutdown')
+
+    // Send exit notification
+    await connection.sendNotification('exit')
+
+    // Close the connection
+    connection.dispose()
+
+    // Kill the ruff server process
+    ruffServer.kill()
+  } catch (error) {
+    console.error('Error during shutdown:', error)
+  } finally {
+    // Ensure the connection is disposed even if an error occurs
+    connection.dispose()
+  }
 }
