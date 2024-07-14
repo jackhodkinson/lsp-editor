@@ -1,11 +1,13 @@
 import { ChildProcess, spawn } from 'child_process'
 import { ChangeSet, Text } from '@codemirror/state'
+import { EventEmitter } from 'events'
 
 import {
   Connection,
   createConnection,
   InitializeParams,
   InitializeResult,
+  PublishDiagnosticsParams,
   StreamMessageReader,
   StreamMessageWriter,
   TextDocumentContentChangeEvent,
@@ -17,6 +19,7 @@ export type LanguageServer = {
   openBlankDocument: () => string
   edit: (documentId: string, changes: ChangeSet) => void
   format: (documentId: string) => Promise<string>
+  onDiagnostics: (callback: (diagnostics: PublishDiagnosticsParams) => void) => void
 }
 
 type Document = {
@@ -40,10 +43,22 @@ export async function createLanguageServer(): Promise<LanguageServer> {
 
   await initializeServer(connection)
 
+  const diagnosticsEmitter = new EventEmitter()
+
+  connection.onNotification(
+    'textDocument/publishDiagnostics',
+    (params: PublishDiagnosticsParams) => {
+      diagnosticsEmitter.emit('diagnostics', params.diagnostics)
+    }
+  )
+
   return {
     openBlankDocument: () => openBlankDocument(connection, documents),
     edit: (documentId, changes) => edit(connection, documents, documentId, changes),
-    format: (documentId) => format(connection, documents, documentId)
+    format: (documentId) => format(connection, documents, documentId),
+    onDiagnostics: (callback: (diagnostics: PublishDiagnosticsParams) => void): void => {
+      diagnosticsEmitter.on('diagnostics', callback)
+    }
   }
 }
 

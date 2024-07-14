@@ -23,7 +23,10 @@ app.whenReady().then(async () => {
     return await languageServer.format(documentId)
   })
 
-  createWindow()
+  const mainWindow = createWindow()
+  languageServer.onDiagnostics((diagnostics) => {
+    mainWindow.webContents.send('diagnostics', diagnostics)
+  })
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

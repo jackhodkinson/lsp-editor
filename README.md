@@ -2,9 +2,13 @@
 
 A simple python code editor with code formatting and linting.
 
-This is a toy experiment to show how to integrate the ruff language server into a code editor.
+This is a toy experiment to show how to integrate the [ruff](https://github.com/astral-sh/ruff) language server into a code editor.
 
-This editor is built with Electron, CodeMirror, and VS Code's language server client library.
+This editor is built with [Electron](https://www.electronjs.org/), [CodeMirror](https://codemirror.net/), and VS Code's [language server client library](https://github.com/Microsoft/vscode-languageserver-node).
+
+This is a toy experiment for demonstration purposes only. The code editor does not persist data or open files.
+
+![Linting error](image.png)
 
 ## Recommended IDE Setup
 
@@ -20,13 +24,16 @@ $ npm install
 
 You will also need to have `ruff` installed and available in your path.
 
+### Running tests
+
+Make sure your ruff client is installed and availiable by running the tests
+
+```bash
+$ npm test
+```
+
 ### Development
 
 ```bash
 $ npm run dev
 ```
-
-### TODO:
-
-- [x] Code formatting
-- [ ] Code linting
