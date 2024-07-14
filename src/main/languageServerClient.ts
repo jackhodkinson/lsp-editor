@@ -1,5 +1,5 @@
 import { ChildProcess, spawn } from 'child_process'
-import { ChangeSet, Text } from '@codemirror/state'
+import { ChangeSet, Text, EditorState } from '@codemirror/state'
 import { EventEmitter } from 'events'
 
 import {
@@ -19,7 +19,7 @@ import {
 export type LanguageServer = {
   openBlankDocument: () => string
   edit: (documentId: string, changes: ChangeSet) => void
-  format: (documentId: string) => Promise<string>
+  format: (documentId: string) => Promise<string | undefined>
   onDiagnostics: (callback: (diagnostics: PublishDiagnosticsParams) => void) => void
 }
 
@@ -32,6 +32,7 @@ type Document = {
 export async function createLanguageServer(): Promise<LanguageServer> {
   const ruffServer = spawn('ruff', ['server', '--preview', '-v'])
 
+  // Debugging the ruff server
   ruffServer.stdout?.on('data', (data) => {
     console.log(`Ruff server stdout: ${data}`)
   })
@@ -110,13 +111,13 @@ function edit(
     const currentVersion = document.version
     const newVersion = currentVersion + 1
 
+    // Convert ChangeSet to TextDocumentContentChangeEvent[]
+    const contentChanges = convertChangeSetToContentChange(changes, document.code)
+
     // Apply CodeMirror ChangeSet
     const newCode = changes.apply(document.code)
 
     documents.set(documentId, { ...document, version: newVersion, code: newCode })
-
-    // Convert ChangeSet to TextDocumentContentChangeEvent[]
-    const contentChanges = convertChangeSetToContentChange(changes, newCode)
 
     connection.sendNotification('textDocument/didChange', {
       textDocument: { uri: documentId, version: newVersion },
@@ -160,41 +161,47 @@ async function format(
   connection: Connection,
   documents: Map<string, Document>,
   documentId: string
-): Promise<string> {
-  const formattingParams = {
-    textDocument: { uri: documentId },
-    options: { tabSize: 4, insertSpaces: true }
-  }
-
-  const formattingResult = await connection.sendRequest<TextEdit[]>(
-    'textDocument/formatting',
-    formattingParams
-  )
-
+): Promise<string | undefined> {
   const document = documents.get(documentId)
   if (!document) {
     throw new Error(`Document ${documentId} not found`)
   }
 
-  const changes = ChangeSet.of(
-    formattingResult.map((edit) => ({
-      from: positionToOffset(edit.range.start, document.code),
-      to: positionToOffset(edit.range.end, document.code),
-      insert: edit.newText
-    })),
-    document.code.length
+  const formattingParams = {
+    textDocument: { uri: documentId },
+    options: { tabSize: 4, insertSpaces: true }
+  }
+
+  const formattingResult = await connection.sendRequest<TextEdit[] | null>(
+    'textDocument/formatting',
+    formattingParams
   )
 
-  const newCode = changes.apply(document.code)
-  documents.set(documentId, { ...document, code: newCode })
+  if (!formattingResult) {
+    return
+  }
 
+  // Create an EditorState from the document's code
+  const state = EditorState.create({ doc: document.code })
+
+  const changes = ChangeSet.of(
+    formattingResult.map((edit) => ({
+      from: positionToOffset(edit.range.start, state),
+      to: positionToOffset(edit.range.end, state),
+      insert: edit.newText
+    })),
+    state.doc.length
+  )
+
+  // Don't apply state change to backend `documents` yet
+  // because the state in the renderer is the source of truth
   return changes.toJSON()
 }
 
-function positionToOffset(position: { line: number; character: number }, text: Text): number {
-  let offset = 0
-  for (let i = 0; i < position.line; i++) {
-    offset += text.line(i).length + 1 // +1 for the newline character
-  }
-  return offset + position.character
+function positionToOffset(
+  position: { line: number; character: number },
+  state: EditorState
+): number {
+  const line = state.doc.line(position.line + 1) // CodeMirror lines are 1-indexed
+  return line.from + position.character
 }

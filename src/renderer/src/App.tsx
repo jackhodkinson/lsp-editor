@@ -1,4 +1,4 @@
-import ReactCodeMirror, { ChangeSet, ReactCodeMirrorRef } from '@uiw/react-codemirror'
+import ReactCodeMirror, { ChangeSet, EditorState, ReactCodeMirrorRef } from '@uiw/react-codemirror'
 import { python } from '@codemirror/lang-python'
 import { useState, useRef, useEffect } from 'react'
 import { ViewUpdate } from '@codemirror/view'
@@ -21,7 +21,8 @@ function App(): JSX.Element {
   }
 
   function handleFormatCode(): void {
-    window.api.invoke<string>('format-code', code).then((formattedCode) => {
+    window.api.invoke<string | undefined>('format-code', code).then((formattedCode) => {
+      if (!formattedCode) return
       const changeset = ChangeSet.fromJSON(formattedCode)
       const view = editorRef.current?.view
       if (view) {
@@ -35,7 +36,9 @@ function App(): JSX.Element {
 
   useEffect(() => {
     window.api.receive('diagnostics', (receivedDiagnostics: LSPDiagnostic[]) => {
-      const cmDiagnostics = convertLSPDiagnostics(receivedDiagnostics)
+      const view = editorRef.current?.view
+      if (!view) return
+      const cmDiagnostics = convertLSPDiagnostics(receivedDiagnostics, view.state)
       setDiagnostics(cmDiagnostics)
     })
     return (): void => {
@@ -50,7 +53,7 @@ function App(): JSX.Element {
       <ReactCodeMirror
         ref={editorRef}
         value={code}
-        height="200px"
+        height="300px"
         extensions={[python(), linterExtension, lintGutter()]}
         onUpdate={handleCodeUpdate}
       />
@@ -59,14 +62,25 @@ function App(): JSX.Element {
   )
 }
 
-function convertLSPDiagnostics(lspDiagnostic: LSPDiagnostic[]): CMDiagnostic[] {
-  return lspDiagnostic.map((d) => ({
-    from: d.range.start.character,
-    to: d.range.end.character,
+function convertLSPDiagnostics(
+  lspDiagnostics: LSPDiagnostic[],
+  state: EditorState
+): CMDiagnostic[] {
+  return lspDiagnostics.map((d) => ({
+    from: positionToOffset(d.range.start, state),
+    to: positionToOffset(d.range.end, state),
     severity: convertSeverity(d.severity),
     message: d.message,
     source: d.source
   }))
+}
+
+function positionToOffset(
+  position: { line: number; character: number },
+  state: EditorState
+): number {
+  const line = state.doc.line(position.line + 1)
+  return line.from + position.character
 }
 
 function convertSeverity(severity: number | undefined): 'info' | 'warning' | 'error' {
